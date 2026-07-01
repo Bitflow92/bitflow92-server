@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Runtime telemetry data
+data.jsonl
+data2.jsonl
+
+# Certificates
+cert.pem
+key.pem
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# Firmware dashboard history
+firmware_dashboard/history/*
+!firmware_dashboard/history/.gitkeep
+
+# Dashboard runtime files
+firmware_dashboard/status.json
+firmware_dashboard/status_old.json
+
+# macOS
+.DS_Store
