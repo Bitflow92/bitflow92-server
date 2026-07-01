@@ -1,5 +1,5 @@
-from flask import Flask, request, jsonify, render_template_string, send_from_directory, abort, redirect, url_for
-import os, json, hashlib
+from flask import Flask, request, jsonify, render_template_string, send_from_directory, abort, redirect, url_for, Response
+import csv, io, os, json, hashlib
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -36,6 +36,23 @@ def read_jsonl(path):
                 except:
                     continue
     return msgs
+
+def build_csv_response(filename_prefix, headers, rows):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([label for label, key in headers])
+
+    for row in rows:
+        writer.writerow([row.get(key, "") if isinstance(row, dict) else "" for label, key in headers])
+
+    current_date = datetime.now().date().isoformat()
+    filename = f"{filename_prefix}_{current_date}.csv"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 def sha256_file(path):
     h = hashlib.sha256()
@@ -494,8 +511,9 @@ def receive_meter():
 
 @app.route("/meter")
 def show_meter():
-    messages = read_jsonl(METER_FILE)
-    latest = messages[-1] if messages else {}
+    history = read_jsonl(METER_FILE)
+    latest = history[-1] if history else {}
+    messages = list(reversed(history))
     html = """
     <!doctype html>
     <html>
@@ -516,6 +534,8 @@ def show_meter():
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #eee; }
         .muted { color: #666; }
+        .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .button { display: inline-block; background: #0b6bcb; color: white; padding: 10px 14px; border-radius: 8px; font-weight: 700; }
         .danger { background: #dc2626; color: white; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
       </style>
     </head>
@@ -525,9 +545,12 @@ def show_meter():
           <h2>INA219 Solar Meter</h2>
           <p><a href="/">Home</a> | <a href="/meter.json">Raw JSON</a></p>
         </div>
-        <form method="post" action="/meter/delete" onsubmit="return confirm('Delete all INA219 solar meter history?');">
-          <button class="danger" type="submit">Delete History</button>
-        </form>
+        <div class="actions">
+          <a class="button" href="/meter/download.csv">Download CSV</a>
+          <form method="post" action="/meter/delete" onsubmit="return confirm('Delete all INA219 solar meter history?');">
+            <button class="danger" type="submit">Delete History</button>
+          </form>
+        </div>
       </div>
 
       <div class="card">
@@ -573,6 +596,19 @@ def show_meter():
     </html>
     """
     return render_template_string(html, messages=messages, latest=latest)
+
+@app.route("/meter/download.csv")
+def download_meter_csv():
+    headers = [
+        ("Count", "count"),
+        ("Logger Time", "time"),
+        ("Server Received", "received_at"),
+        ("Temperature", "temperature"),
+        ("Solar Voltage", "solar_voltage"),
+        ("Solar Current", "solar_current"),
+        ("Solar Power", "solar_power"),
+    ]
+    return build_csv_response("meter_data", headers, read_jsonl(METER_FILE))
 
 @app.route("/meter/delete", methods=["POST"])
 def delete_meter_history():
@@ -628,8 +664,9 @@ def receive():
 # ---------- View Received Messages ----------
 @app.route("/messages")
 def show_messages():
-    messages = read_jsonl(DATA_FILE)
-    latest = messages[-1] if messages else {}
+    history = read_jsonl(DATA_FILE)
+    latest = history[-1] if history else {}
+    messages = list(reversed(history))
     html = """
     <!doctype html>
     <html>
@@ -650,6 +687,8 @@ def show_messages():
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #eee; }
         .muted { color: #666; }
+        .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .button { display: inline-block; background: #0b6bcb; color: white; padding: 10px 14px; border-radius: 8px; font-weight: 700; }
         .danger { background: #dc2626; color: white; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
       </style>
     </head>
@@ -659,9 +698,12 @@ def show_messages():
           <h2>Device Data Log</h2>
           <p><a href="/">Home</a> | <a href="/messages.json">Raw JSON</a></p>
         </div>
-        <form method="post" action="/messages/delete" onsubmit="return confirm('Delete all device data history?');">
-          <button class="danger" type="submit">Delete History</button>
-        </form>
+        <div class="actions">
+          <a class="button" href="/messages/download.csv">Download CSV</a>
+          <form method="post" action="/messages/delete" onsubmit="return confirm('Delete all device data history?');">
+            <button class="danger" type="submit">Delete History</button>
+          </form>
+        </div>
       </div>
 
       <div class="card">
@@ -712,6 +754,23 @@ def show_messages():
     </html>
     """
     return render_template_string(html, messages=messages, latest=latest)
+
+@app.route("/messages/download.csv")
+def download_messages_csv():
+    headers = [
+        ("Count", "count"),
+        ("Logger Time", "time"),
+        ("Battery", "battery"),
+        ("Temperature", "temperature"),
+        ("Latitude", "latitude"),
+        ("Longitude", "longitude"),
+        ("GPS Date", "gps_date"),
+        ("GPS Time", "gps_time"),
+        ("Satellites", "satellites"),
+        ("Version", "version"),
+        ("Board", "board_id"),
+    ]
+    return build_csv_response("device_data", headers, read_jsonl(DATA_FILE))
 
 @app.route("/messages/delete", methods=["POST"])
 def delete_messages_history():
@@ -775,4 +834,3 @@ def ota_file(filename):
 # ---------- Dev Run ----------
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=38649)
-
